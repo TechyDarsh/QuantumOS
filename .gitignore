@@ -1,0 +1,9 @@
+# QuantumOS Build and Log Artifacts
+*.bin
+*.o
+*.tmp
+*.img
+*.log
+nul
+.gemini/
+.system_generated/
