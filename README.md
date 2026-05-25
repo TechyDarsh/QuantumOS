@@ -1,18 +1,16 @@
-# 🌌 QuantumOS
+# QuantumOS
 
 > **Booting a custom 32-bit x86 graphical operating system directly from a floppy disk image!**  
 > Written in pure Assembly and freestanding C. Featuring a dynamic VESA graphics engine, full hardware interrupts, custom PS/2 mouse and keyboard drivers, an overlapping desktop window manager, and an in-memory Virtual File System (VFS) with script execution!
 
 ---
 
-## 🚀 Welcome to QuantumOS!
-Hey there! Welcome to **QuantumOS**. This is a project born out of a desire to understand what happens under the hood when a computer turns on. I wanted to build an operating system from scratch—no Linux kernels, no Windows sub-layers, just boot-to-bare-metal code. 
-
-To make this work, I had to dive deep into x86 hardware specifications, the PC architecture, and the BIOS. Below is a comprehensive, "PhD-level" breakdown of the entire architecture, written so that anyone can grasp the concepts and see how these low-level pieces fit together!
+## Welcome to QuantumOS!
+Hey there! Welcome to **QuantumOS**. This is a project born out of a desire to understand what happens under the hood when a computer turns on. I wanted to build an operating system from scratch—no Linux kernels, no Windows sub-layers, just boot-to-bare-metal code.
 
 ---
 
-## 📐 Architectural Specification
+## Architectural Specification
 
 The boot sequence and run-time execution flow follow this pipeline:
 
@@ -32,7 +30,7 @@ graph TD
 
 ---
 
-### 💾 1. The 16-bit Bootloader (`src/boot/boot.asm`)
+### 1. The 16-bit Bootloader (`src/boot/boot.asm`)
 When the PC powers on, the BIOS runs a Power-On Self-Test (POST), searches for bootable media, and loads the first 512-byte sector (the boot sector) into physical memory at address `0x7C00`.
 
 #### **Dynamic VESA BIOS Extensions (VBE) Initialization**
@@ -56,7 +54,7 @@ We load the GDT using the `lgdt` instruction and set the Protection Enable (PE) 
 
 ---
 
-### ⚙️ 2. The 32-bit Assembly Entry (`src/kernel/kernel_entry.asm`)
+### 2. The 32-bit Assembly Entry (`src/kernel/kernel_entry.asm`)
 At `pm_entry`, we are running 32-bit code but segment registers (`DS`, `ES`, `FS`, `GS`, `SS`) are uninitialized. We set them to the GDT data selector (`0x10`) and point the stack pointer (`ESP`) to `0x90000` (giving us a safe stack space growing downwards).
 
 #### **Floating Point Unit (FPU) Initialization**
@@ -72,7 +70,7 @@ Since C cannot directly execute instructions like `in`, `out`, `lidt`, or `iret`
 
 ---
 
-### 🛡️ 3. PIC Remapping & IDT Setup (`src/kernel/kernel.c`)
+### 3. PIC Remapping & IDT Setup (`src/kernel/kernel.c`)
 By default, the IBM PC maps hardware interrupts (IRQs) to CPU interrupt vectors `0x08` to `0x0F`. However, the Intel CPU reserves vectors `0x00` to `0x1F` for internal exceptions (like Page Faults and GPFs). To prevent conflict, we remap the **8259 Programmable Interrupt Controller (PIC)**.
 
 #### **PIC Remap Words**
@@ -88,7 +86,7 @@ To prevent the compiler from inserting alignment bytes, we declare the IDT point
 
 ---
 
-### 🖱️ 4. PS/2 Hardware Drivers (`src/kernel/kernel.c`)
+### 4. PS/2 Hardware Drivers (`src/kernel/kernel.c`)
 The keyboard and mouse are managed by the Intel 8042 Keyboard Controller.
 
 #### **PS/2 Controller Configuration**
@@ -111,7 +109,7 @@ The mouse sends data in packets of 3 bytes. We implement a state machine inside 
 
 ---
 
-### 🖼️ 5. VESA VBE Graphics & Double Buffering (`src/kernel/kernel.c`)
+### 5. VESA VBE Graphics & Double Buffering (`src/kernel/kernel.c`)
 Writing directly to the video card's frame buffer (`VBE_FB_PTR`) causes heavy flickering (tearing) during window dragging because the screen redraws while the memory is being written.
 
 To solve this, we implement **Double Buffering**:
@@ -122,7 +120,7 @@ To solve this, we implement **Double Buffering**:
 
 ---
 
-### 🗄️ 6. The Virtual Filesystem (VFS) & Scripting (`src/kernel/kernel.c`)
+### 6. The Virtual Filesystem (VFS) & Scripting (`src/kernel/kernel.c`)
 Since we do not have a hard drive controller driver, we implement an **in-memory Virtual Filesystem (VFS)**:
 * We define a `VirtualFile` structure representing filename (16 bytes), content (512 bytes), size, and usage flag.
 * We instantiate a global table of 8 files, pre-populated with files like `welcome.txt` and `script.txt`.
@@ -131,16 +129,16 @@ Since we do not have a hard drive controller driver, we implement an **in-memory
 
 ---
 
-## 🛠️ Build & Run Instructions
+## Build & Run Instructions
 
-### **1. Prerequisites**
+### 1. Prerequisites
 You need the following tools installed on your Windows host:
 * [NASM](https://www.nasm.us/) (x86 Assembler)
 * [MinGW-w64 GCC](https://www.mingw-w64.org/) (for C compilation)
 * GNU Make (or `mingw32-make`)
 * [QEMU](https://www.qemu.org/) (x86 Emulator)
 
-### **2. Compilation**
+### 2. Compilation
 Rebuild the floppy disk image from source:
 ```powershell
 make clean
@@ -154,7 +152,7 @@ This runs the compilation pipeline:
 5. `objcopy` strips headers from `kernel.tmp` creating raw flat binary `kernel.bin`.
 6. PowerShell concatenates `boot.bin` and `kernel.bin` and pads it to exactly `1,474,560` bytes (a 1.44MB floppy disk image `quantum_os.img`).
 
-### **3. Run Emulator**
+### 3. Run Emulator
 Launch the OS in QEMU:
 ```powershell
 make run
@@ -162,9 +160,9 @@ make run
 
 ---
 
-## ⌨️ Desktop Interface & Shortcuts
+## Desktop Interface & Shortcuts
 
-### **Global Keyboard Shortcuts**
+### Global Keyboard Shortcuts
 * **`Alt + S`**: Open / Focus the **Quantum Shell** terminal.
 * **`Alt + L`**: Open / Focus the **LetterPad** text editor.
 * **`Alt + I`**: Open / Focus the **System Info** window.
@@ -173,6 +171,6 @@ make run
 * **`Alt + R`**: Perform a hardware reboot (sends `0xFE` to port `0x64`).
 * **`Alt + P`**: Shut down the system.
 
-### **Integrated LetterPad Toolbar**
+### Integrated LetterPad Toolbar
 * **`[Save]`**: Click this button in the LetterPad toolbar to save the current text to `note.txt` in the Virtual Filesystem.
 * **`[Load]`**: Click this button to restore the contents of `note.txt` back into the editor.
