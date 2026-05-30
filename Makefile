@@ -9,7 +9,7 @@ LD = ld
 NASM = nasm
 OBJCOPY = objcopy
 
-CFLAGS = -m32 -march=i386 -ffreestanding -O2 -Wall -Wextra -Wno-unused-parameter -fno-pic -fno-stack-protector -fno-pie -nostdlib -fno-builtin -mno-80387 -mno-sse -mno-mmx -Isrc/kernel
+CFLAGS = -m32 -march=i386 -ffreestanding -O2 -Wall -Wextra -Wno-unused-parameter -fno-pic -fno-stack-protector -fno-pie -nostdlib -fno-builtin -mno-80387 -mno-sse -mno-mmx -mno-stack-arg-probe -Isrc/kernel
 ASMFLAGS = -f win32
 LDFLAGS = -m i386pe -T link.ld
 
