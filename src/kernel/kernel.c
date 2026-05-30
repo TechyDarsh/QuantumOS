@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "font.h"
+#include "background1.h"
+
+
 
 // Low-level port I/O routines (implemented in assembly)
 extern uint8_t inb(uint16_t port);
@@ -289,6 +292,27 @@ void draw_gradient_vertical_back(int x, int y, int w, int h, uint32_t color1, ui
     }
 }
 
+void draw_image_wallpaper_back(const uint16_t* img_data, int img_w, int img_h) {
+    for (int img_y = 0; img_y < img_h; img_y++) {
+        int start_y = img_y * 4;
+        int row_offset = img_y * img_w;
+        for (int img_x = 0; img_x < img_w; img_x++) {
+            int start_x = img_x * 4;
+            uint16_t color565 = img_data[row_offset + img_x];
+            uint32_t r = ((color565 >> 11) & 0x1F) << 3;
+            uint32_t g = ((color565 >> 5) & 0x3F) << 2;
+            uint32_t b = (color565 & 0x1F) << 3;
+            uint32_t color32 = (r << 16) | (g << 8) | b;
+            
+            for (int dy = 0; dy < 4; dy++) {
+                for (int dx = 0; dx < 4; dx++) {
+                    putpixel_back(start_x + dx, start_y + dy, color32);
+                }
+            }
+        }
+    }
+}
+
 // -------------------------------------------------------------------------
 // IDT & Interrupt Handling Setup
 // -------------------------------------------------------------------------
@@ -405,6 +429,8 @@ void timer_handler(void) {
 volatile int shift_pressed = 0;
 volatile int alt_pressed = 0;
 volatile int caps_lock = 0;
+volatile uint8_t key_states[128] = {0};
+
 
 static const char kbd_us[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8',
@@ -458,6 +484,9 @@ static const char kbd_us_shift[128] = {
 #define WINDOW_SHELL 0
 #define WINDOW_LETTERPAD 1
 #define WINDOW_SYSINFO 2
+#define WINDOW_KBDVIS 3
+
+#define NUM_WINDOWS 4
 
 typedef struct {
     int x, y, w, h;
@@ -468,15 +497,92 @@ typedef struct {
     int type;
 } Window;
 
-Window windows[3] = {
-    {50, 50, 450, 240, "Quantum Shell", 1, 0, 1, WINDOW_SHELL},
+typedef struct {
+    int dx, dy, dw, dh;
+    uint8_t scancode;
+    const char* label;
+} VisualKey;
+
+VisualKey visual_keys[60] = {
+    // Row 1
+    {25, 34, 30, 24, 0x01, "ESC"},
+    {57, 34, 26, 24, 0x02, "1"},
+    {85, 34, 26, 24, 0x03, "2"},
+    {113, 34, 26, 24, 0x04, "3"},
+    {141, 34, 26, 24, 0x05, "4"},
+    {169, 34, 26, 24, 0x06, "5"},
+    {197, 34, 26, 24, 0x07, "6"},
+    {225, 34, 26, 24, 0x08, "7"},
+    {253, 34, 26, 24, 0x09, "8"},
+    {281, 34, 26, 24, 0x0A, "9"},
+    {309, 34, 26, 24, 0x0B, "0"},
+    {337, 34, 26, 24, 0x0C, "-"},
+    {365, 34, 26, 24, 0x0D, "="},
+    {393, 34, 62, 24, 0x0E, "BACK"},
+    
+    // Row 2
+    {25, 60, 42, 24, 0x0F, "TAB"},
+    {69, 60, 26, 24, 0x10, "Q"},
+    {97, 60, 26, 24, 0x11, "W"},
+    {125, 60, 26, 24, 0x12, "E"},
+    {153, 60, 26, 24, 0x13, "R"},
+    {181, 60, 26, 24, 0x14, "T"},
+    {209, 60, 26, 24, 0x15, "Y"},
+    {237, 60, 26, 24, 0x16, "U"},
+    {265, 60, 26, 24, 0x17, "I"},
+    {293, 60, 26, 24, 0x18, "O"},
+    {321, 60, 26, 24, 0x19, "P"},
+    {349, 60, 26, 24, 0x1A, "["},
+    {377, 60, 26, 24, 0x1B, "]"},
+    {405, 60, 50, 24, 0x1C, "ENT"},
+    
+    // Row 3
+    {25, 86, 52, 24, 0x3A, "CAPS"},
+    {79, 86, 26, 24, 0x1E, "A"},
+    {107, 86, 26, 24, 0x1F, "S"},
+    {135, 86, 26, 24, 0x20, "D"},
+    {163, 86, 26, 24, 0x21, "F"},
+    {191, 86, 26, 24, 0x22, "G"},
+    {219, 86, 26, 24, 0x23, "H"},
+    {247, 86, 26, 24, 0x24, "J"},
+    {275, 86, 26, 24, 0x25, "K"},
+    {303, 86, 26, 24, 0x26, "L"},
+    {331, 86, 26, 24, 0x27, ";"},
+    {359, 86, 26, 24, 0x28, "'"},
+    {387, 86, 68, 24, 0x2B, "\\"},
+    
+    // Row 4
+    {25, 112, 66, 24, 0x2A, "SHIFT"},
+    {93, 112, 26, 24, 0x2C, "Z"},
+    {121, 112, 26, 24, 0x2D, "X"},
+    {149, 112, 26, 24, 0x2E, "C"},
+    {177, 112, 26, 24, 0x2F, "V"},
+    {205, 112, 26, 24, 0x30, "B"},
+    {233, 112, 26, 24, 0x31, "N"},
+    {261, 112, 26, 24, 0x32, "M"},
+    {289, 112, 26, 24, 0x33, ","},
+    {317, 112, 26, 24, 0x34, "."},
+    {345, 112, 26, 24, 0x35, "/"},
+    {373, 112, 82, 24, 0x36, "SHIFT"},
+    
+    // Row 5
+    {25, 138, 52, 24, 0x1D, "CTRL"},
+    {79, 138, 52, 24, 0x38, "ALT"},
+    {133, 138, 192, 24, 0x39, "SPACE"},
+    {327, 138, 52, 24, 0x38, "ALT"},
+    {381, 138, 74, 24, 0x1D, "CTRL"}
+};
+
+Window windows[NUM_WINDOWS] = {
+    {50, 50, 450, 240, "Quantum Shell", 0, 0, 0, WINDOW_SHELL},
     {250, 100, 420, 280, "LetterPad Text Editor", 0, 0, 0, WINDOW_LETTERPAD},
-    {350, 180, 320, 160, "System Info", 0, 0, 0, WINDOW_SYSINFO}
+    {350, 180, 320, 160, "System Info", 0, 0, 0, WINDOW_SYSINFO},
+    {160, 180, 480, 200, "Keyboard Visualizer", 0, 0, 0, WINDOW_KBDVIS}
 };
 
 int drag_offset_x = 0;
 int drag_offset_y = 0;
-int active_win_idx = WINDOW_SHELL;
+int active_win_idx = -1;
 
 #pragma pack(push, 1)
 typedef struct {
@@ -522,7 +628,7 @@ char letterpad_text[2048];
 int letterpad_len = 0;
 
 // Graphical Options
-int current_wallpaper_style = 0;
+int current_wallpaper_style = 4;
 int matrix_mode = 0;
 int matrix_drops[50];
 int start_menu_open = 0;
@@ -535,7 +641,7 @@ void reboot_system(void);
 void shutdown_system(void);
 
 void focus_window(int idx) {
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < NUM_WINDOWS; i++) {
         windows[i].is_focused = (i == idx);
     }
     active_win_idx = idx;
@@ -550,6 +656,18 @@ void toggle_window(int idx) {
 
 void keyboard_handler(void) {
     uint8_t scancode = inb(0x60);
+    
+    // Track key states (pressed / released)
+    if (scancode & 0x80) {
+        uint8_t rel_scancode = scancode & 0x7F;
+        if (rel_scancode < 128) {
+            key_states[rel_scancode] = 0;
+        }
+    } else {
+        if (scancode < 128) {
+            key_states[scancode] = 1;
+        }
+    }
     
     if (scancode == 0x2A || scancode == 0x36) { shift_pressed = 1; return; }
     if (scancode == 0xAA || scancode == 0xB6) { shift_pressed = 0; return; }
@@ -575,6 +693,7 @@ void keyboard_handler(void) {
         if (scancode == 0x1F) toggle_window(WINDOW_SHELL);
         else if (scancode == 0x26) toggle_window(WINDOW_LETTERPAD);
         else if (scancode == 0x17) toggle_window(WINDOW_SYSINFO);
+        else if (scancode == 0x25) toggle_window(WINDOW_KBDVIS);  // Alt + K
         else if (scancode == 0x2E) {
             if (active_win_idx >= 0 && windows[active_win_idx].is_visible)
                 windows[active_win_idx].is_visible = 0;
@@ -847,7 +966,7 @@ void run_shell_command(const char* cmd) {
         shell_print("  reboot      Restart system");
         shell_print("  poweroff    Shut down");
         shell_print("--- File & App Commands ---");
-        shell_print("  open <app>  Open: shell, letterpad, sysinfo");
+        shell_print("  open <app>  Open: shell, letterpad, kbdvis, sysinfo");
         shell_print("  close <app> Close specified app");
         shell_print("  ls          List files in VFS");
         shell_print("  cat <file>  Print file contents");
@@ -855,7 +974,7 @@ void run_shell_command(const char* cmd) {
         shell_print("  rm <file>   Delete file");
         shell_print("  edit <file> Edit file in LetterPad");
         shell_print("  run <file>  Run shell script file");
-        shell_print("  theme <0-3> Change wallpaper gradient");
+        shell_print("  theme <0-4> Change wallpaper gradient / image");
     } else if (strcmp(cmd, "about") == 0) {
         shell_print("QuantumOS v1.0");
         shell_print("AI Prototype Operating System");
@@ -904,8 +1023,12 @@ void run_shell_command(const char* cmd) {
             windows[WINDOW_SYSINFO].is_visible = 1;
             focus_window(WINDOW_SYSINFO);
             shell_print("Opened System Info.");
+        } else if (strcmp(app, "kbdvis") == 0 || strcmp(app, "visualizer") == 0) {
+            windows[WINDOW_KBDVIS].is_visible = 1;
+            focus_window(WINDOW_KBDVIS);
+            shell_print("Opened Keyboard Visualizer.");
         } else {
-            shell_print("Unknown app. Supported: shell, letterpad, sysinfo");
+            shell_print("Unknown app. Supported: shell, letterpad, kbdvis, sysinfo");
         }
     } else if (strncmp(cmd, "close ", 6) == 0) {
         const char* app = cmd + 6;
@@ -919,20 +1042,23 @@ void run_shell_command(const char* cmd) {
         } else if (strcmp(app, "sysinfo") == 0 || strcmp(app, "info") == 0) {
             windows[WINDOW_SYSINFO].is_visible = 0;
             shell_print("Closed System Info.");
+        } else if (strcmp(app, "kbdvis") == 0 || strcmp(app, "visualizer") == 0) {
+            windows[WINDOW_KBDVIS].is_visible = 0;
+            shell_print("Closed Keyboard Visualizer.");
         } else {
-            shell_print("Unknown app. Supported: shell, letterpad, sysinfo");
+            shell_print("Unknown app. Supported: shell, letterpad, kbdvis, sysinfo");
         }
     } else if (strncmp(cmd, "theme ", 6) == 0) {
         const char* arg = cmd + 6;
         while (*arg == ' ') arg++;
         int val = *arg - '0';
-        if (val >= 0 && val <= 3) {
+        if (val >= 0 && val <= 4) {
             current_wallpaper_style = val;
             char msg[64];
             snprintf(msg, sizeof(msg), "Wallpaper theme changed to %d.", val);
             shell_print(msg);
         } else {
-            shell_print("Theme range: 0 to 3.");
+            shell_print("Theme range: 0 to 4.");
         }
     } else if (strcmp(cmd, "ls") == 0) {
         shell_print("--- Virtual Filesystem (VFS) ---");
@@ -1098,7 +1224,7 @@ void run_shell_command(const char* cmd) {
 // OS Actions
 // -------------------------------------------------------------------------
 void change_wallpaper(void) {
-    current_wallpaper_style = (current_wallpaper_style + 1) % 4;
+    current_wallpaper_style = (current_wallpaper_style + 1) % 5;
 }
 
 void reboot_system(void) {
@@ -1300,6 +1426,28 @@ void draw_window(Window* win) {
         snprintf(uptime, sizeof(uptime), "Uptime: %d seconds", system_ticks / 18);
         draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, win->x + 20, win->y + 102, uptime, 0x00FF88, 1);
         draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, win->x + 20, win->y + 124, "For learning OS development.", 0x888888, 1);
+    } else if (win->type == WINDOW_KBDVIS) {
+        draw_rect_back(win->x + 3, win->y + 24, win->w - 6, win->h - 27, 0x1E1E24);
+        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, win->x + 25, win->y + 25, "Physical Keyboard Visualizer", 0x8888AA, 1);
+        
+        for (int i = 0; i < 60; i++) {
+            VisualKey* key = &visual_keys[i];
+            int kx = win->x + key->dx;
+            int ky = win->y + key->dy;
+            
+            int pressed = (key->scancode < 128) && key_states[key->scancode];
+            
+            uint32_t bg_color = pressed ? 0xFF5500 : 0x3A3A4A;
+            uint32_t border_color = pressed ? 0xFFCC00 : 0x555566;
+            uint32_t text_color = pressed ? 0xFFFFFF : 0xCCCCCC;
+            
+            draw_rect_back(kx, ky, key->dw, key->dh, bg_color);
+            draw_rect_outline_back(kx, ky, key->dw, key->dh, border_color, 1);
+            
+            int text_x = kx + (key->dw - strlen(key->label) * 8) / 2;
+            int text_y = ky + (key->dh - 8) / 2;
+            draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, text_x, text_y, key->label, text_color, 1);
+        }
     }
 }
 
@@ -1422,18 +1570,22 @@ void kernel_main(void) {
         int m_left = mouse_left_pressed;
         int left_clicked = (m_left && !prev_mouse_left_pressed);
         
-        // --- 1. Draw Wallpaper (integer-only gradient) ---
-        uint32_t wall_c1 = 0, wall_c2 = 0;
-        if (current_wallpaper_style == 0) {
-            wall_c1 = 0x1A092A; wall_c2 = 0x4A1E5C;
-        } else if (current_wallpaper_style == 1) {
-            wall_c1 = 0x05131C; wall_c2 = 0x1A354C;
-        } else if (current_wallpaper_style == 2) {
-            wall_c1 = 0x260710; wall_c2 = 0x5C0D24;
+        // --- 1. Draw Wallpaper (gradient or image) ---
+        if (current_wallpaper_style == 4) {
+            draw_image_wallpaper_back(background1_data, BG_WIDTH, BG_HEIGHT);
         } else {
-            wall_c1 = 0x101518; wall_c2 = 0x2A3238;
+            uint32_t wall_c1 = 0, wall_c2 = 0;
+            if (current_wallpaper_style == 0) {
+                wall_c1 = 0x1A092A; wall_c2 = 0x4A1E5C;
+            } else if (current_wallpaper_style == 1) {
+                wall_c1 = 0x05131C; wall_c2 = 0x1A354C;
+            } else if (current_wallpaper_style == 2) {
+                wall_c1 = 0x260710; wall_c2 = 0x5C0D24;
+            } else {
+                wall_c1 = 0x101518; wall_c2 = 0x2A3238;
+            }
+            draw_gradient_vertical_back(0, 0, SCREEN_W, 560, wall_c1, wall_c2);
         }
-        draw_gradient_vertical_back(0, 0, SCREEN_W, 560, wall_c1, wall_c2);
         
         // --- 2. Desktop Icons ---
         int icon_hover = -1;
@@ -1459,18 +1611,20 @@ void kernel_main(void) {
         draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, 15, 315, "PowerOff", 0xFFFFFF, 1);
 
         // --- 3. Window Management ---
-        int win_draw_order[3];
-        if (active_win_idx == WINDOW_SHELL) {
-            win_draw_order[0] = WINDOW_SYSINFO; win_draw_order[1] = WINDOW_LETTERPAD; win_draw_order[2] = WINDOW_SHELL;
-        } else if (active_win_idx == WINDOW_LETTERPAD) {
-            win_draw_order[0] = WINDOW_SYSINFO; win_draw_order[1] = WINDOW_SHELL; win_draw_order[2] = WINDOW_LETTERPAD;
-        } else {
-            win_draw_order[0] = WINDOW_SHELL; win_draw_order[1] = WINDOW_LETTERPAD; win_draw_order[2] = WINDOW_SYSINFO;
+        int win_draw_order[NUM_WINDOWS];
+        int draw_idx = 0;
+        for (int i = 0; i < NUM_WINDOWS; i++) {
+            if (i != active_win_idx) {
+                win_draw_order[draw_idx++] = i;
+            }
+        }
+        if (active_win_idx >= 0 && active_win_idx < NUM_WINDOWS) {
+            win_draw_order[draw_idx++] = active_win_idx;
         }
 
         if (left_clicked) {
             int handled = 0;
-            for (int i = 2; i >= 0; i--) {
+            for (int i = NUM_WINDOWS - 1; i >= 0; i--) {
                 int w_idx = win_draw_order[i];
                 Window* win = &windows[w_idx];
                 if (!win->is_visible) continue;
@@ -1555,7 +1709,7 @@ void kernel_main(void) {
         }
         
         // Window drag
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < NUM_WINDOWS; i++) {
             if (windows[i].is_dragged) {
                 if (m_left) {
                     windows[i].x = mx - drag_offset_x;
@@ -1571,26 +1725,26 @@ void kernel_main(void) {
         }
 
         // Draw windows
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < NUM_WINDOWS; i++) {
             draw_window(&windows[win_draw_order[i]]);
         }
         
         // --- 4. Start Menu ---
         if (left_clicked && start_menu_open) {
-            if (!(mx >= 10 && mx <= 170 && my >= 410 && my <= 556)) {
+            if (!(mx >= 10 && mx <= 170 && my >= 378 && my <= 556)) {
                 start_menu_open = 0;
             }
         }
         
         if (start_menu_open) {
-            draw_rect_back(14, 414, 160, 146, 0x0C0B18);
-            draw_rect_back(10, 410, 160, 146, 0x1A1A24);
-            draw_rect_outline_back(10, 410, 160, 146, 0x8844AA, 1);
+            draw_rect_back(14, 382, 160, 178, 0x0C0B18);
+            draw_rect_back(10, 378, 160, 178, 0x1A1A24);
+            draw_rect_outline_back(10, 378, 160, 178, 0x8844AA, 1);
             
-            const char* options[4] = { " Terminal", " LetterPad", " System Info", " Power Off" };
+            const char* options[5] = { " Terminal", " LetterPad", " Visualizer", " System Info", " Power Off" };
             
-            for (int i = 0; i < 4; i++) {
-                int item_y = 415 + i * 32;
+            for (int i = 0; i < 5; i++) {
+                int item_y = 383 + i * 32;
                 int hovered = (mx >= 10 && mx <= 170 && my >= item_y && my < item_y + 32);
                 
                 if (hovered) {
@@ -1600,8 +1754,9 @@ void kernel_main(void) {
                         start_menu_open = 0;
                         if (i == 0) { windows[WINDOW_SHELL].is_visible = 1; focus_window(WINDOW_SHELL); }
                         else if (i == 1) { windows[WINDOW_LETTERPAD].is_visible = 1; focus_window(WINDOW_LETTERPAD); }
-                        else if (i == 2) { windows[WINDOW_SYSINFO].is_visible = 1; focus_window(WINDOW_SYSINFO); }
-                        else if (i == 3) shutdown_system();
+                        else if (i == 2) { windows[WINDOW_KBDVIS].is_visible = 1; focus_window(WINDOW_KBDVIS); }
+                        else if (i == 3) { windows[WINDOW_SYSINFO].is_visible = 1; focus_window(WINDOW_SYSINFO); }
+                        else if (i == 4) shutdown_system();
                     }
                 } else {
                     draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, 20, item_y + 10, options[i], 0xCCCCCC, 1);
@@ -1625,6 +1780,7 @@ void kernel_main(void) {
 
         int task_sh_hover = (mx >= 100 && mx <= 200 && my >= 566 && my <= 594);
         int task_lp_hover = (mx >= 210 && mx <= 320 && my >= 566 && my <= 594);
+        int task_kv_hover = (mx >= 330 && mx <= 440 && my >= 566 && my <= 594);
         
         uint32_t sh_btn_c = windows[WINDOW_SHELL].is_visible ? 0x8844AA : (task_sh_hover ? 0x444455 : 0x222233);
         draw_rect_back(100, 566, 100, 28, sh_btn_c);
@@ -1637,6 +1793,12 @@ void kernel_main(void) {
         draw_rect_outline_back(210, 566, 110, 28, 0x555566, 1);
         draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, 222, 576, "LetterPad", 0xFFFFFF, 1);
         if (left_clicked && task_lp_hover) toggle_window(WINDOW_LETTERPAD);
+
+        uint32_t kv_btn_c = windows[WINDOW_KBDVIS].is_visible ? 0x8844AA : (task_kv_hover ? 0x444455 : 0x222233);
+        draw_rect_back(330, 566, 110, 28, kv_btn_c);
+        draw_rect_outline_back(330, 566, 110, 28, 0x555566, 1);
+        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, 342, 576, "Visualizer", 0xFFFFFF, 1);
+        if (left_clicked && task_kv_hover) toggle_window(WINDOW_KBDVIS);
 
         // Clock
         if (system_ticks % 18 == 0) {

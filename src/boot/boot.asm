@@ -83,7 +83,7 @@ start:
     mov es, ax
     xor bx, bx
 
-    mov word [sectors_left], 128
+    mov word [sectors_left], 320
     mov byte [cur_sect], 2
     mov byte [cur_head], 0
     mov byte [cur_cyl], 0
