@@ -580,7 +580,7 @@ Window windows[NUM_WINDOWS] = {
     {250, 100, 420, 280, "LetterPad Text Editor", 0, 0, 0, WINDOW_LETTERPAD},
     {350, 180, 320, 160, "System Info", 0, 0, 0, WINDOW_SYSINFO},
     {160, 180, 480, 200, "Keyboard Visualizer", 0, 0, 0, WINDOW_KBDVIS},
-    {100, 100, 320, 200, "Games Menu", 0, 0, 0, WINDOW_GAMESMENU},
+    {100, 100, 400, 240, "Games Menu", 0, 0, 0, WINDOW_GAMESMENU},
     {160, 80, 480, 360, "Chess", 0, 0, 0, WINDOW_CHESS}
 };
 
@@ -888,6 +888,64 @@ void execute_ai_move(void) {
     if (CHESS_TYPE(captured) == TYPE_KING) {
         chess_status = 2;
         strcpy(chess_msg, "White's turn.");
+    }
+}
+
+static const uint16_t chess_pawn_bmp[16] = {
+    0x0000, 0x0000, 0x0180, 0x03C0, 0x03C0, 0x0180, 0x0180, 0x03C0,
+    0x07E0, 0x07E0, 0x07E0, 0x07E0, 0x0FF0, 0x1FF8, 0x0000, 0x0000
+};
+static const uint16_t chess_knight_bmp[16] = {
+    0x0000, 0x0180, 0x0380, 0x07C0, 0x0DC0, 0x1FE0, 0x3FE0, 0x3E60,
+    0x3C60, 0x1860, 0x18E0, 0x1FE0, 0x0FC0, 0x1FE0, 0x3FF0, 0x0000
+};
+static const uint16_t chess_bishop_bmp[16] = {
+    0x0180, 0x03C0, 0x0180, 0x03C0, 0x07E0, 0x0FF0, 0x0E70, 0x1C78,
+    0x1FF8, 0x0FF0, 0x07E0, 0x07E0, 0x0FF0, 0x1FF8, 0x3FFC, 0x0000
+};
+static const uint16_t chess_rook_bmp[16] = {
+    0x0000, 0x36D8, 0x36D8, 0x3FF8, 0x1FF0, 0x0FE0, 0x0FE0, 0x0FE0,
+    0x0FE0, 0x0FE0, 0x0FE0, 0x0FE0, 0x1FF0, 0x3FF8, 0x3FFC, 0x0000
+};
+static const uint16_t chess_queen_bmp[16] = {
+    0x0000, 0x1110, 0x3BA8, 0x3BA8, 0x1FF0, 0x1FF0, 0x0FE0, 0x0FE0,
+    0x07C0, 0x0FE0, 0x1FF0, 0x3FF8, 0x3FF8, 0x1FF0, 0x3FFC, 0x0000
+};
+static const uint16_t chess_king_bmp[16] = {
+    0x0180, 0x03C0, 0x0180, 0x3BA8, 0x3FF8, 0x1FF0, 0x0FE0, 0x0FE0,
+    0x0FE0, 0x0FE0, 0x1FF0, 0x3FF8, 0x3FF8, 0x1FF0, 0x3FFC, 0x0000
+};
+
+void draw_chess_piece_icon(int x, int y, int type, int side) {
+    const uint16_t* bitmap = 0;
+    switch (type) {
+        case TYPE_PAWN:   bitmap = chess_pawn_bmp;   break;
+        case TYPE_KNIGHT: bitmap = chess_knight_bmp; break;
+        case TYPE_BISHOP: bitmap = chess_bishop_bmp; break;
+        case TYPE_ROOK:   bitmap = chess_rook_bmp;   break;
+        case TYPE_QUEEN:  bitmap = chess_queen_bmp;  break;
+        case TYPE_KING:   bitmap = chess_king_bmp;   break;
+    }
+    if (!bitmap) return;
+    
+    uint32_t body_color = (side == CHESS_WHITE) ? 0xFFD700 : 0x050505;
+    uint32_t shadow_color = (side == CHESS_WHITE) ? 0x332200 : 0xFFFFFF;
+    
+    for (int dy = 0; dy < 16; dy++) {
+        uint16_t row = bitmap[dy];
+        for (int dx = 0; dx < 16; dx++) {
+            if (row & (1 << (15 - dx))) {
+                putpixel_back(x + dx + 1, y + dy + 1, shadow_color);
+            }
+        }
+    }
+    for (int dy = 0; dy < 16; dy++) {
+        uint16_t row = bitmap[dy];
+        for (int dx = 0; dx < 16; dx++) {
+            if (row & (1 << (15 - dx))) {
+                putpixel_back(x + dx, y + dy, body_color);
+            }
+        }
     }
 }
 
@@ -1852,21 +1910,21 @@ void draw_window(Window* win) {
         }
     } else if (win->type == WINDOW_GAMESMENU) {
         draw_rect_back(win->x + 3, win->y + 24, win->w - 6, win->h - 27, 0x1A1A24);
-        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, win->x + 20, win->y + 35, "SELECT A GAME", 0x8844AA, 1);
+        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, win->x + 20, win->y + 38, "SELECT A GAME", 0x8844AA, 1);
         
         // Chess launcher button
         int btn_x = win->x + 20;
-        int btn_y = win->y + 55;
-        int btn_w = 280;
-        int btn_h = 60;
+        int btn_y = win->y + 60;
+        int btn_w = 360;
+        int btn_h = 70;
         int hovered = (mouse_x >= btn_x && mouse_x <= btn_x + btn_w && mouse_y >= btn_y && mouse_y <= btn_y + btn_h);
         uint32_t btn_c = hovered ? 0x2A2A3A : 0x222230;
         uint32_t outline_c = hovered ? 0xFFD700 : 0x555566;
         
         draw_rect_back(btn_x, btn_y, btn_w, btn_h, btn_c);
         draw_rect_outline_back(btn_x, btn_y, btn_w, btn_h, outline_c, 1);
-        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, btn_x + 15, btn_y + 10, "Chess Game", 0xFFD700, 2);
-        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, btn_x + 15, btn_y + 36, "2-Player or VS Computer (Easy/Med/Hard)", 0xCCCCCC, 1);
+        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, btn_x + 15, btn_y + 12, "Chess Game", 0xFFD700, 2);
+        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, btn_x + 15, btn_y + 40, "2-Player or VS Computer (Easy/Med/Hard)", 0xCCCCCC, 1);
     } else if (win->type == WINDOW_CHESS) {
         draw_rect_back(win->x + 3, win->y + 24, win->w - 6, win->h - 27, 0x1E1E24);
         
@@ -1920,20 +1978,7 @@ void draw_window(Window* win) {
                     if (p != 0) {
                         int side = CHESS_SIDE(p);
                         int type = CHESS_TYPE(p);
-                        const char* lbl = "";
-                        switch (type) {
-                            case TYPE_PAWN: lbl = "Pawn"; break;
-                            case TYPE_KNIGHT: lbl = "Kght"; break;
-                            case TYPE_BISHOP: lbl = "Bshp"; break;
-                            case TYPE_ROOK: lbl = "Rook"; break;
-                            case TYPE_QUEEN: lbl = "Quen"; break;
-                            case TYPE_KING: lbl = "King"; break;
-                        }
-                        
-                        uint32_t shadow_color = (side == CHESS_WHITE) ? 0x332200 : 0xFFFFFF;
-                        uint32_t piece_color = (side == CHESS_WHITE) ? 0xFFD700 : 0x050505;
-                        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, px + 1, py + 13, lbl, shadow_color, 1);
-                        draw_string_in_buffer((uint32_t*)BACKBUFFER_ADDR, SCREEN_W, SCREEN_H, px, py + 12, lbl, piece_color, 1);
+                        draw_chess_piece_icon(px + 8, py + 8, type, side);
                     }
                 }
             }
@@ -2144,7 +2189,7 @@ void kernel_main(void) {
                 
                 // Games Menu click checks
                 if (win->type == WINDOW_GAMESMENU) {
-                    if (mx >= win->x + 20 && mx <= win->x + 300 && my >= win->y + 55 && my <= win->y + 115) {
+                    if (mx >= win->x + 20 && mx <= win->x + 380 && my >= win->y + 60 && my <= win->y + 130) {
                         windows[WINDOW_CHESS].is_visible = 1;
                         focus_window(WINDOW_CHESS);
                         handled = 1;
